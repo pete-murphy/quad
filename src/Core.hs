@@ -1,14 +1,14 @@
-{-# LANGUAGE MultiWayIf #-}
-{-# LANGUAGE ViewPatterns #-}
 {-# OPTIONS_GHC -option -pgmF=record-dot-preprocessor #-}
 
-{- HLINT ignore "Redundant bracket" -}
 module Core where
 
 import Control.Arrow
+import qualified Docker
 import RIO
+import qualified RIO.List as List
 import qualified RIO.Map as Map
 import qualified RIO.NonEmpty as NonEmpty
+import qualified RIO.Set as Set
 
 newtype Pipeline
   = Pipeline
@@ -20,21 +20,21 @@ data Step
   = Step
       { name :: StepName,
         commands :: NonEmpty Text,
-        image :: Image
+        image :: Docker.Image
       }
   deriving (Eq, Show)
 
 newtype StepName = StepName Text
   deriving (Eq, Show, Ord)
 
-newtype Image = Image Text
-  deriving (Eq, Show)
+exitCodeToStepResult :: Docker.ContainerExitCode -> StepResult
+exitCodeToStepResult exit =
+  if Docker.exitCodeToInt exit == 0
+    then StepSucceeded
+    else StepFailed exit
 
 stepNameToText :: StepName -> Text
 stepNameToText (StepName step) = step
-
-imageToText :: Image -> Text
-imageToText (Image image) = image
 
 data Build
   = Build
@@ -44,21 +44,9 @@ data Build
       }
 
 data StepResult
-  = StepFailed ContainerExitCode
+  = StepFailed Docker.ContainerExitCode
   | StepSucceeded
   deriving (Eq, Show)
-
-newtype ContainerExitCode = ContainerExitCode Int
-  deriving (Eq, Show)
-
-exitCodeToInt :: ContainerExitCode -> Int
-exitCodeToInt (ContainerExitCode code) = code
-
-exitCodeToStepResult :: ContainerExitCode -> StepResult
-exitCodeToStepResult exit =
-  if exitCodeToInt exit == 0
-    then StepSucceeded
-    else StepFailed exit
 
 -- | Stuart's zipper-like suggestion
 -- data BuildState
@@ -94,7 +82,7 @@ progress build =
         Right step ->
           pure (build {state = BuildRunning (BuildRunningState step.name)})
     BuildRunning state -> do
-      let exit = ContainerExitCode 0
+      let exit = Docker.ContainerExitCode 0
           result = exitCodeToStepResult exit
       pure
         build
@@ -105,6 +93,15 @@ progress build =
 
 buildHasNextStep :: Build -> Either BuildResult Step
 buildHasNextStep build =
-  case build.state of
-    BuildFinished result -> Left result
-    _ -> Right undefined
+  -- case build.state of
+  --   BuildFinished result -> Left result
+  --   _ -> Right undefined
+  if allSucceeded
+    then case nextStep of
+      Just step -> Right step
+      Nothing -> Left BuildSucceeded
+    else Left BuildFailed
+  where
+    allSucceeded = List.all ((==) StepSucceeded) build.completedSteps
+    nextStep = List.find f build.pipeline.steps
+    f step = step.name `Map.notMember` build.completedSteps
