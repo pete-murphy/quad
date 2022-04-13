@@ -10,7 +10,9 @@ let
     compiler-nix-name = "ghc8107";
   };
 
-in {
-  exe = project.quad.components.exes.quad;
-  lib = project.quad.components.sublibs.quad-core;
-}
+in project
+
+# in {
+#   exe = project.quad.components.exes.quad;
+#   lib = project.quad.components.sublibs.quad-core;
+# }
