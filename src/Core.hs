@@ -1,12 +1,16 @@
+{-# LANGUAGE MultiWayIf #-}
+{-# LANGUAGE ViewPatterns #-}
 {-# OPTIONS_GHC -option -pgmF=record-dot-preprocessor #-}
 
-{-# HLINT ignore "Use newtype instead of data" #-}
-
+{- HLINT ignore "Redundant bracket" -}
 module Core where
 
+import Control.Arrow
 import RIO
+import qualified RIO.Map as Map
+import qualified RIO.NonEmpty as NonEmpty
 
-data Pipeline
+newtype Pipeline
   = Pipeline
       { steps :: NonEmpty Step
       }
@@ -21,7 +25,7 @@ data Step
   deriving (Eq, Show)
 
 newtype StepName = StepName Text
-  deriving (Eq, Show)
+  deriving (Eq, Show, Ord)
 
 newtype Image = Image Text
   deriving (Eq, Show)
@@ -35,13 +39,44 @@ imageToText (Image image) = image
 data Build
   = Build
       { pipeline :: Pipeline,
-        state :: BuildState
+        state :: BuildState,
+        completedSteps :: Map StepName StepResult
       }
 
+data StepResult
+  = StepFailed ContainerExitCode
+  | StepSucceeded
+  deriving (Eq, Show)
+
+newtype ContainerExitCode = ContainerExitCode Int
+  deriving (Eq, Show)
+
+exitCodeToInt :: ContainerExitCode -> Int
+exitCodeToInt (ContainerExitCode code) = code
+
+exitCodeToStepResult :: ContainerExitCode -> StepResult
+exitCodeToStepResult exit =
+  if exitCodeToInt exit == 0
+    then StepSucceeded
+    else StepFailed exit
+
+-- | Stuart's zipper-like suggestion
+-- data BuildState
+--   = BuildState
+--       { toDo :: [Step],
+--         current :: Maybe Step,
+--         done :: [Step]
+--       }
+--   deriving (Eq, Show)
 data BuildState
   = BuildReady
-  | BuildRunning
+  | BuildRunning BuildRunningState
   | BuildFinished BuildResult
+  deriving (Eq, Show)
+
+newtype BuildRunningState
+  = BuildRunningState
+      {step :: StepName}
   deriving (Eq, Show)
 
 data BuildResult
@@ -52,6 +87,24 @@ data BuildResult
 progress :: Build -> IO Build
 progress build =
   case build.state of
-    BuildReady -> undefined -- TODO
-    BuildRunning -> undefined -- TODO
+    BuildReady ->
+      case buildHasNextStep build of
+        Left result ->
+          pure (build {state = BuildFinished result})
+        Right step ->
+          pure (build {state = BuildRunning (BuildRunningState step.name)})
+    BuildRunning state -> do
+      let exit = ContainerExitCode 0
+          result = exitCodeToStepResult exit
+      pure
+        build
+          { state = BuildReady,
+            completedSteps = Map.insert state.step result build.completedSteps
+          }
     BuildFinished _ -> pure build
+
+buildHasNextStep :: Build -> Either BuildResult Step
+buildHasNextStep build =
+  case build.state of
+    BuildFinished result -> Left result
+    _ -> Right undefined
