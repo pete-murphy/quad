@@ -5,7 +5,7 @@ module Docker where
 import qualified Network.HTTP.Simple as HTTP
 import RIO
 
-data CreateContainerOptions
+newtype CreateContainerOptions
   = CreateContainerOptions
       {image :: Image}
 
