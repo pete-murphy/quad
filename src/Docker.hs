@@ -1,4 +1,5 @@
 {-# OPTIONS_GHC -Wno-deprecations #-}
+{-# OPTIONS_GHC -option -pgmF=record-dot-preprocessor #-}
 
 module Docker where
 
@@ -14,7 +15,10 @@ newtype CreateContainerOptions
 createContainer :: CreateContainerOptions -> IO ()
 createContainer options = do
   manager <- Socket.newManager "/var/run/docker.sock"
-  let body = Aeson.Null -- TODO
+  let image = imageToText options.image
+  let body =
+        Aeson.object
+          [("Image", Aeson.toJSON image)]
   let req =
         HTTP.defaultRequest
           & HTTP.setRequestManager manager
