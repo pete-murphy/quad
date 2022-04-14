@@ -72,8 +72,8 @@ data BuildResult
   | BuildFailed
   deriving (Eq, Show)
 
-progress :: Build -> IO Build
-progress build =
+progress :: Docker.Service -> Build -> IO Build
+progress docker build =
   case build.state of
     BuildReady ->
       case buildHasNextStep build of
@@ -81,8 +81,8 @@ progress build =
           pure (build {state = BuildFinished result})
         Right step -> do
           let options = Docker.CreateContainerOptions step.image
-          container <- Docker.createContainer options
-          Docker.startContainer container
+          container <- docker.createContainer options
+          docker.startContainer container
           pure (build {state = BuildRunning (BuildRunningState step.name)})
     BuildRunning state -> do
       let exit = Docker.ContainerExitCode 0
