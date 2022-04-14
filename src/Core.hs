@@ -79,7 +79,10 @@ progress build =
       case buildHasNextStep build of
         Left result ->
           pure (build {state = BuildFinished result})
-        Right step ->
+        Right step -> do
+          let options = Docker.CreateContainerOptions step.image
+          container <- Docker.createContainer options
+          Docker.startContainer container
           pure (build {state = BuildRunning (BuildRunningState step.name)})
     BuildRunning state -> do
       let exit = Docker.ContainerExitCode 0
@@ -93,9 +96,6 @@ progress build =
 
 buildHasNextStep :: Build -> Either BuildResult Step
 buildHasNextStep build =
-  -- case build.state of
-  --   BuildFinished result -> Left result
-  --   _ -> Right undefined
   if allSucceeded
     then case nextStep of
       Just step -> Right step
