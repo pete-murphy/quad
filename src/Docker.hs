@@ -2,8 +2,10 @@
 
 module Docker where
 
+import qualified Data.Aeson as Aeson
 import qualified Network.HTTP.Simple as HTTP
 import RIO
+import qualified Socket
 
 newtype CreateContainerOptions
   = CreateContainerOptions
@@ -11,9 +13,11 @@ newtype CreateContainerOptions
 
 createContainer :: CreateContainerOptions -> IO ()
 createContainer options = do
-  let body = () -- TODO
+  manager <- Socket.newManager "/var/run/docker.sock"
+  let body = Aeson.Null -- TODO
   let req =
         HTTP.defaultRequest
+          & HTTP.setRequestManager manager
           & HTTP.setRequestPath "/v1.40/containers/create"
           & HTTP.setRequestMethod "POST"
           & HTTP.setRequestBodyJSON body
