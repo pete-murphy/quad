@@ -5,8 +5,10 @@
 
 module Docker where
 
+import Control.Lens (ix)
 import Data.Aeson ((.:))
 import qualified Data.Aeson as Aeson
+import Data.Aeson.Lens (_Object)
 import qualified Data.Aeson.Types as Aeson.Types
 import qualified Network.HTTP.Simple as HTTP
 import RIO
@@ -41,6 +43,9 @@ createContainer_ options = do
           & HTTP.setRequestPath "/v1.40/containers/create"
           & HTTP.setRequestMethod "POST"
           & HTTP.setRequestBodyJSON body
+  -- let parser = Aeson.withObject "create-container" \o -> do
+  --       o ^. _Object . ix "Id"
+  --       pure (ContainerId cId)
   let parser = Aeson.withObject "create-container" \o -> do
         cId <- o .: "Id"
         pure (ContainerId cId)
@@ -58,6 +63,23 @@ parseResponse res parser = do
   case result of
     Left e -> throwString e
     Right status -> pure status
+
+-- parseResponse ::
+--   HTTP.Response ByteString ->
+--   -- (Aeson.Value -> Aeson.Types.Parser a) ->
+--   (Aeson.Value -> Maybe a) ->
+--   IO a
+-- parseResponse res parser = do
+--   let result = do
+--         value <- Aeson.eitherDecodeStrict (HTTP.getResponseBody res)
+--         -- Aeson.Types.parseEither parser value
+--         note "" (parser value)
+--   case result of
+--     Left e -> throwString e
+--     Right status -> pure status
+
+note :: String -> Maybe a -> Either String a
+note message = maybe (Left message) Right
 
 startContainer_ :: ContainerId -> IO ()
 startContainer_ container = do

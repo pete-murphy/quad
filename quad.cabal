@@ -6,6 +6,7 @@ library quad-core
   exposed-modules:
       Core
       Docker
+      Socket
   default-extensions:
       BlockArguments
       DeriveAnyClass
@@ -23,6 +24,8 @@ library quad-core
     , http-client
     , http-conduit
     , http-types
+    , lens
+    , lens-aeson
     , network
     , record-hasfield
     , rio

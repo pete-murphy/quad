@@ -7,6 +7,8 @@ import qualified Docker
 import RIO
 import qualified RIO.Map as Map
 import RIO.NonEmpty.Partial as NonEmpty.Partial
+import qualified RIO.Process as Process
+import qualified Runner
 import Test.Hspec
 
 makeStep :: Text -> Text -> [Text] -> Step
@@ -36,23 +38,44 @@ testBuild =
       completedSteps = mempty
     }
 
-runBuild :: Docker.Service -> Build -> IO Build
-runBuild docker build = do
-  newBuild <- progress docker build
-  case newBuild.state of
-    BuildFinished _ -> pure newBuild
-    _ -> do
-      threadDelay (1 * 1000 * 1000)
-      runBuild docker newBuild
-
-testRunSuccess :: Docker.Service -> IO ()
-testRunSuccess docker = do
-  result <- runBuild docker testBuild
+testRunSuccess :: Runner.Service -> IO ()
+testRunSuccess runner = do
+  build <-
+    runner.prepareBuild
+      ( makePipeline
+          [ makeStep "First step" "ubuntu" ["date"],
+            makeStep "Second step" "ubuntu" ["uname -r"]
+          ]
+      )
+  result <- runner.runBuild build
   result.state `shouldBe` BuildFinished BuildSucceeded
-  Map.elems result.completedSteps `shouldBe` [StepSucceeded, StepSucceeded]
+  Map.elems result.completedSteps
+    `shouldBe` [StepSucceeded, StepSucceeded]
+
+testRunFailure :: Runner.Service -> IO ()
+testRunFailure runner = do
+  build <-
+    runner.prepareBuild
+      ( makePipeline
+          [makeStep "Should fail" "ubuntu" ["exit 1"]]
+      )
+  result <- runner.runBuild build
+  result.state `shouldBe` BuildFinished BuildFailed
+  Map.elems result.completedSteps
+    `shouldBe` [StepFailed (Docker.ContainerExitCode 1)]
 
 main :: IO ()
 main = hspec do
-  describe "Quad CI" do
-    it "should run a build (success)" do
-      1 `shouldBe` 1 -- TODO
+  docker <- runIO Docker.createService
+  runner <- runIO (Runner.createService docker)
+  beforeAll cleanupDocker do
+    describe "Quad CI" do
+      it "should run a build (success)" do
+        testRunSuccess runner
+      it "should run a build (failure)" do
+        testRunFailure runner
+
+cleanupDocker :: IO ()
+cleanupDocker = void do
+  Process.readProcessStdout
+    "docker rm -f $(docker ps -aq --filter \"label=quad\")"
