@@ -48,28 +48,23 @@ data StepResult
   | StepSucceeded
   deriving (Eq, Show)
 
--- | Stuart's zipper-like suggestion
--- data BuildState
---   = BuildState
---       { toDo :: [Step],
---         current :: Maybe Step,
---         done :: [Step]
---       }
---   deriving (Eq, Show)
 data BuildState
   = BuildReady
   | BuildRunning BuildRunningState
   | BuildFinished BuildResult
   deriving (Eq, Show)
 
-newtype BuildRunningState
+data BuildRunningState
   = BuildRunningState
-      {step :: StepName}
+      { step :: StepName,
+        container :: Docker.ContainerId
+      }
   deriving (Eq, Show)
 
 data BuildResult
   = BuildSucceeded
   | BuildFailed
+  | BuildUnexpectedState Text
   deriving (Eq, Show)
 
 progress :: Docker.Service -> Build -> IO Build
@@ -83,15 +78,34 @@ progress docker build =
           let options = Docker.CreateContainerOptions step.image
           container <- docker.createContainer options
           docker.startContainer container
-          pure (build {state = BuildRunning (BuildRunningState step.name)})
+          let s =
+                BuildRunningState
+                  { step = step.name,
+                    container = container
+                  }
+          pure (build {state = BuildRunning s})
     BuildRunning state -> do
-      let exit = Docker.ContainerExitCode 0
-          result = exitCodeToStepResult exit
-      pure
-        build
-          { state = BuildReady,
-            completedSteps = Map.insert state.step result build.completedSteps
-          }
+      -- let exit = Docker.ContainerExitCode 0
+      --     result = exitCodeToStepResult exit
+      status <- docker.containerStatus state.container
+      case status of
+        Docker.ContainerRunning ->
+          pure build
+        Docker.ContainerExited exit -> do
+          let result = exitCodeToStepResult exit
+          pure
+            build
+              { completedSteps = Map.insert state.step result build.completedSteps,
+                state = BuildReady
+              }
+        Docker.ContainerOther other -> do
+          let state = BuildFinished (BuildUnexpectedState other)
+          pure build{state}
+    -- pure
+    --   build
+    --     { state = BuildReady,
+    --       completedSteps = Map.insert state.step result build.completedSteps
+    --     }
     BuildFinished _ -> pure build
 
 buildHasNextStep :: Build -> Either BuildResult Step

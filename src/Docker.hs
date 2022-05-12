@@ -1,4 +1,3 @@
-{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TypeApplications #-}
 {-# OPTIONS_GHC -Wno-deprecations #-}
 {-# OPTIONS_GHC -option -pgmF=record-dot-preprocessor #-}
@@ -43,9 +42,6 @@ createContainer_ options = do
           & HTTP.setRequestPath "/v1.40/containers/create"
           & HTTP.setRequestMethod "POST"
           & HTTP.setRequestBodyJSON body
-  -- let parser = Aeson.withObject "create-container" \o -> do
-  --       o ^. _Object . ix "Id"
-  --       pure (ContainerId cId)
   let parser = Aeson.withObject "create-container" \o -> do
         cId <- o .: "Id"
         pure (ContainerId cId)
@@ -63,20 +59,6 @@ parseResponse res parser = do
   case result of
     Left e -> throwString e
     Right status -> pure status
-
--- parseResponse ::
---   HTTP.Response ByteString ->
---   -- (Aeson.Value -> Aeson.Types.Parser a) ->
---   (Aeson.Value -> Maybe a) ->
---   IO a
--- parseResponse res parser = do
---   let result = do
---         value <- Aeson.eitherDecodeStrict (HTTP.getResponseBody res)
---         -- Aeson.Types.parseEither parser value
---         note "" (parser value)
---   case result of
---     Left e -> throwString e
---     Right status -> pure status
 
 note :: String -> Maybe a -> Either String a
 note message = maybe (Left message) Right
@@ -96,7 +78,8 @@ startContainer_ container = do
 data Service
   = Service
       { createContainer :: CreateContainerOptions -> IO ContainerId,
-        startContainer :: ContainerId -> IO ()
+        startContainer :: ContainerId -> IO (),
+        containerStatus :: ContainerId -> IO ContainerStatus
       }
 
 createService :: IO Service
@@ -104,7 +87,8 @@ createService = do
   pure
     Service
       { createContainer = createContainer_,
-        startContainer = startContainer_
+        startContainer = startContainer_,
+        containerStatus = undefined
       }
 
 newtype Image = Image Text
@@ -118,3 +102,9 @@ newtype ContainerExitCode = ContainerExitCode Int
 
 exitCodeToInt :: ContainerExitCode -> Int
 exitCodeToInt (ContainerExitCode code) = code
+
+data ContainerStatus
+  = ContainerRunning
+  | ContainerExited ContainerExitCode
+  | ContainerOther Text
+  deriving (Eq, Show)
